@@ -3,7 +3,7 @@ Class for implementing filtering network from Akam et al, Neuron 2010, but lacki
 organisation, such that it performs filtering on activity from networks with homogeneous activiy
 rather than an input with a spatial population code.  This is the network used for figure S1.B2.
 
-Thomas Akam 2012
+# Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
 '''
 
 from brian import *

@@ -4,7 +4,7 @@ input consisting of an asynchronous component and oscillating component (40Hz si
 as the firing rate  of the two components is varied.  In the paper a colormap was used to show the 
 outpu firing rates but a surface plot of the same data is additionally plotted here.
 
-Thomas Akam 2012
+# Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
 '''
 
 import filter_network as fn

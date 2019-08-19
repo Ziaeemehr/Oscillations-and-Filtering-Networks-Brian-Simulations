@@ -9,7 +9,7 @@ the firing rates back  to aproximately where they were in the Nest implementatio
 resulting networks behave very similarly to those in the paper but have slightly lower 
 oscillation frequencies.
 
-Thomas Akam 2012
+# Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
 '''
 
 

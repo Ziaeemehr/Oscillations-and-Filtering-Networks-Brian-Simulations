@@ -4,7 +4,7 @@ somewhat lower oscillation frequencies of the Brian implementations of the input
 frequencies at which the amplitude patterns are evaluated has been modified and a longer 200ms 
 time window is used for the analysis.
 
-Thomas Akam 2012
+# Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
 '''
 
 from brian import *     # Used only for units.
