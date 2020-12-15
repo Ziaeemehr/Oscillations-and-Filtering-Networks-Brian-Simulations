@@ -14,6 +14,9 @@ from brian2.equations.equations import Equations
 import logging
 logger = logging.getLogger('ftpuploader')
 
+b2.seed(1)
+np.random.seed(1)
+
 
 def input_rates():
     '''
@@ -31,197 +34,191 @@ def input_rates():
     # print(r)
 
 
-b2.seed(1)
-np.random.seed(1)
+def simulate():
 
-num_I_cells = 2000
-num_E_cells = 8000
+    common_params = {    # Parameters common to all neurons.
+        'C': 100*b2.pfarad,
+        'tau_m': 10*b2.ms,
+        'EL': -60*b2.mV,
+        'DeltaT': 2*b2.mV,
+        'Vreset': -65,  # *b2.mV
+        'VTmean': -50*b2.mV,
+        'VTsd': 2*b2.mV
+    }
 
-sim_duration = 1000
-stimulus = np.sin(np.arange(0, sim_duration)*2*np.pi/sim_duration)
-state = "beta"
+    common_params['gL'] = common_params['C'] / common_params['tau_m']
 
-integration_method = "rk2"
-record_volrages = False
-plot_voltages = record_volrages
+    E_cell_params = dict(common_params, **{'Ncells': num_E_cells,
+                                           'IXmean': 30*b2.pA,
+                                           'IXsd': 20*b2.pA})
 
-common_params = {    # Parameters common to all neurons.
-    'C': 100*b2.pfarad,
-    'tau_m': 10*b2.ms,
-    'EL': -60*b2.mV,
-    'DeltaT': 2*b2.mV,
-    'Vreset': -65,  # *b2.mV
-    'VTmean': -50*b2.mV,
-    'VTsd': 2*b2.mV
-}
+    I_cell_params = dict(common_params, **{'Ncells': num_I_cells,
+                                           'IXmean': 30*b2.pA,
+                                           'IXsd': 80*b2.pA})
 
-common_params['gL'] = common_params['C'] / common_params['tau_m']
+    eqs = Equations(
+        """
+        Im = IX + 
+            gL * (EL - vm) + 
+            gL * DeltaT * exp((vm - VT) / DeltaT) - 
+            ge * (vm - Erev_e) - 
+            gi * (vm - Erev_i) - 
+            gx * (vm - Erev_x) : amp
+        dgi/dt = (1*nsiemens-gi)/Tau_i - gi/Tau_i : siemens
+        dgx/dt = (1*nsiemens-gx)/Tau_x - gx/Tau_x : siemens
+        dge/dt = (1*nsiemens-ge)/Tau_e - ge/Tau_e : siemens
+        VT : volt
+        IX : amp
+        dvm/dt = Im / C : volt
+        """
+    )
 
-E_cell_params = dict(common_params, **{'Ncells': num_E_cells,
-                                       'IXmean': 30*b2.pA,
-                                       'IXsd': 20*b2.pA})
+    param_I_syn = {"Erev_i": 0.0*b2.mV,
+                   "Erev_x": 0.0*b2.mV,
+                   "Erev_e": -80.0*b2.mV,
+                   "Tau_i": 3.0*b2.ms,
+                   "Tau_e": 4.0*b2.ms,
+                   "Tau_x": 4.0*b2.ms,
+                   "w_i": 1.5,  # *b2.nsiemens,  # Peak conductance
+                   "w_x": 1.1,  # *b2.nsiemens,  # (0.8 in paper)
+                   "w_e": 0.2,  # *b2.nsiemens,
+                   "p_i": 0.05,  # ./I_cell_params['Ncells'],  # ! 100.0
+                   "p_e": 0.05,  # ./E_cell_params['Ncells'],  # ! 400
+                   }
+    param_E_syn = {"Erev_i": 0.0*b2.mV,
+                   "Erev_x": 0.0*b2.mV,
+                   "Erev_e": -80.0*b2.mV,
+                   "Tau_i": 3.0*b2.ms,
+                   "Tau_e": 4.0*b2.ms,
+                   "Tau_x": 4.0*b2.ms,
+                   "w_i": 0.6,  # *b2.nsiemens,  # Peak conductance
+                   # *b2.nsiemens,  # Peak conductance  (1 in paper)
+                   "w_x": 1.4,
+                   "w_e": 0.1,  # *b2.nsiemens,  # Peak conductance
+                   "p_i": 0.1,  # ./I_cell_params['Ncells'],  # ! 200
+                   "p_e": 0.05,  # /E_cell_params['Ncells'],  # ! 400
+                   }
 
-I_cell_params = dict(common_params, **{'Ncells': num_I_cells,
-                                       'IXmean': 30*b2.pA,
-                                       'IXsd': 80*b2.pA})
+    if state == "gamma":
+        print('Gamma oscillation state.')
+        param_I_syn['w_x'] = 0.3*b2.nS
+        param_I_syn['w_e'] = 0.4*b2.nS
 
+    elif state == "beta":
+        param_I_syn['w_x'] = 0.5 * b2.nS
+        param_I_syn['Tau_x'] = 12 * b2.ms
+        param_E_syn['w_x'] = 0.55 * b2.nS
+        param_E_syn['Tau_x'] = 12 * b2.ms
+        param_E_syn['w_e'] = 0.05 * b2.nS
+        param_E_syn['Tau_e'] = 12 * b2.ms
+        param_I_syn['w_e'] = 0.1 * b2.nS
+        param_E_syn['w_i'] = 0.1 * b2.nS
+        param_E_syn['Tau_i'] = 15 * b2.ms
+        param_I_syn['w_i'] = 0.2 * b2.nS
+        param_I_syn['Tau_i'] = 15 * b2.ms
 
-eqs = Equations(
-    """
-    Im = IX + 
-        gL * (EL - vm) + 
-        gL * DeltaT * exp((vm - VT) / DeltaT) - 
-        ge * (vm - Erev_e) - 
-        gi * (vm - Erev_i) - 
-        gx * (vm - Erev_x) : amp
-    dgi/dt = (1*nsiemens-gi)/Tau_i - gi/Tau_i : siemens
-    dgx/dt = (1*nsiemens-gx)/Tau_x - gx/Tau_x : siemens
-    dge/dt = (1*nsiemens-ge)/Tau_e - ge/Tau_e : siemens
-    VT : volt
-    IX : amp
-    dvm/dt = Im / C : volt
-    """
-)
+    I_cells = b2.NeuronGroup(I_cell_params['Ncells'],
+                             model=eqs,
+                             method=integration_method,
+                             threshold="vm > 0.*mV",
+                             reset="vm={}*mV".format(I_cell_params['Vreset']),
+                             refractory="vm > 0.*mV",
+                             namespace={**common_params,
+                                        **param_I_syn
+                                        }
+                             )
 
-param_I_syn = {"Erev_i": 0.0*b2.mV,
-               "Erev_x": 0.0*b2.mV,
-               "Erev_e": -80.0*b2.mV,
-               "Tau_i": 3.0*b2.ms,
-               "Tau_e": 4.0*b2.ms,
-               "Tau_x": 4.0*b2.ms,
-               "w_i": 1.5,  # *b2.nsiemens,  # Peak conductance
-               "w_x": 1.1,  # *b2.nsiemens,  # (0.8 in paper)
-               "w_e": 0.2,  # *b2.nsiemens,
-               "p_i": 0.05,  # ./I_cell_params['Ncells'],  # ! 100.0
-               "p_e": 0.05,  # ./E_cell_params['Ncells'],  # ! 400
-               }
-param_E_syn = {"Erev_i": 0.0*b2.mV,
-               "Erev_x": 0.0*b2.mV,
-               "Erev_e": -80.0*b2.mV,
-               "Tau_i": 3.0*b2.ms,
-               "Tau_e": 4.0*b2.ms,
-               "Tau_x": 4.0*b2.ms,
-               "w_i": 0.6,  # *b2.nsiemens,  # Peak conductance
-               "w_x": 1.4,  # *b2.nsiemens,  # Peak conductance  (1 in paper)
-               "w_e": 0.1,  # *b2.nsiemens,  # Peak conductance
-               "p_i": 0.1,  # ./I_cell_params['Ncells'],  # ! 200
-               "p_e": 0.05,  # /E_cell_params['Ncells'],  # ! 400
-               }
+    E_cells = b2.NeuronGroup(E_cell_params['Ncells'],
+                             model=eqs,
+                             method=integration_method,
+                             threshold="vm > 0.*mV",
+                             reset="vm={}*mV".format(E_cell_params['Vreset']),
+                             refractory="vm > 0.*mV",
+                             namespace={**common_params,
+                                        **param_E_syn,
+                                        })
 
-if state == "gamma":
-    print('Gamma oscillation state.')
-    param_I_syn['w_x'] = 0.3*b2.nS
-    param_I_syn['w_e'] = 0.4*b2.nS
+    Poisson_to_E = b2.PoissonGroup(
+        E_cell_params['Ncells'], rates=input_rates())  # ! input_rates
+    Poisson_to_I = b2.PoissonGroup(
+        I_cell_params['Ncells'], rates=400*b2.Hz)
 
-elif state == "beta":
-    param_I_syn['w_x'] = 0.5 * b2.nS
-    param_I_syn['Tau_x'] = 12 * b2.ms
-    param_E_syn['w_x'] = 0.55 * b2.nS
-    param_E_syn['Tau_x'] = 12 * b2.ms
-    param_E_syn['w_e'] = 0.05 * b2.nS
-    param_E_syn['Tau_e'] = 12 * b2.ms
-    param_I_syn['w_e'] = 0.1 * b2.nS
-    param_E_syn['w_i'] = 0.1 * b2.nS
-    param_E_syn['Tau_i'] = 15 * b2.ms
-    param_I_syn['w_i'] = 0.2 * b2.nS
-    param_I_syn['Tau_i'] = 15 * b2.ms
+    cEE = b2.Synapses(E_cells,
+                      E_cells,
+                      on_pre='ge+={}*nsiemens'.format(param_E_syn["w_e"]))
+    cEE.connect(p=param_E_syn["p_e"])
 
+    cIE = b2.Synapses(E_cells,
+                      I_cells,
+                      on_pre='gi+={}*nsiemens'.format(param_I_syn["w_e"]))
+    cIE.connect(p=param_I_syn["p_e"])
 
-I_cells = b2.NeuronGroup(I_cell_params['Ncells'],
-                         model=eqs,
-                         method=integration_method,
-                         threshold="vm > 0.*mV",
-                         reset="vm={}*mV".format(I_cell_params['Vreset']),
-                         refractory="vm > 0.*mV",
-                         namespace={**common_params,
-                                    **param_I_syn
-                                    }
-                         )
+    cEX = b2.Synapses(Poisson_to_E,
+                      E_cells,
+                      method=integration_method,
+                      on_pre="gx += {}*nsiemens".format(param_E_syn["w_x"]))
+    cEX.connect(j='i')
 
-E_cells = b2.NeuronGroup(E_cell_params['Ncells'],
-                         model=eqs,
-                         method=integration_method,
-                         threshold="vm > 0.*mV",
-                         reset="vm={}*mV".format(E_cell_params['Vreset']),
-                         refractory="vm > 0.*mV",
-                         namespace={**common_params,
-                                    **param_E_syn,
-                                    })
+    cIX = b2.Synapses(Poisson_to_I,
+                      I_cells,
+                      on_pre="gx += {}*nsiemens".format(param_I_syn["w_x"]))
+    cIX.connect(j='i')
 
-Poisson_to_E = b2.PoissonGroup(
-    E_cell_params['Ncells'], rates=input_rates())  # ! input_rates
-Poisson_to_I = b2.PoissonGroup(
-    I_cell_params['Ncells'], rates=400*b2.Hz)
+    # Initialise random parameters.
+    I_cells.VT = (randn(len(I_cells)) *
+                  I_cell_params['VTsd'] + I_cell_params['VTmean'])
+    I_cells.IX = (randn(len(I_cells)) *
+                  I_cell_params['IXsd'] + I_cell_params['IXmean'])
 
-cEE = b2.Synapses(E_cells,
-                  E_cells,
-                  on_pre='ge+={}*nsiemens'.format(param_E_syn["w_e"]))
-cEE.connect(p=param_E_syn["p_e"])
+    E_cells.VT = (randn(len(E_cells)) *
+                  E_cell_params['VTsd'] + E_cell_params['VTmean'])
+    E_cells.IX = (randn(len(E_cells)) *
+                  E_cell_params['IXsd'] + E_cell_params['IXmean'])
 
-cIE = b2.Synapses(E_cells,
-                  I_cells,
-                  on_pre='gi+={}*nsiemens'.format(param_I_syn["w_e"]))
-cIE.connect(p=param_I_syn["p_e"])
+    spike_monitor_E = b2.SpikeMonitor(E_cells)
+    spike_monitor_I = b2.SpikeMonitor(I_cells)
 
-cEX = b2.Synapses(Poisson_to_E,
-                  E_cells,
-                  method=integration_method,
-                  on_pre="gx += {}*nsiemens".format(param_E_syn["w_x"]))
-cEX.connect(j='i')
+    rate_monitor_E = b2.PopulationRateMonitor(E_cells)
+    rate_monitor_I = b2.PopulationRateMonitor(I_cells)
 
-cIX = b2.Synapses(Poisson_to_I,
-                  I_cells,
-                  on_pre="gx += {}*nsiemens".format(param_I_syn["w_x"]))
-cIX.connect(j='i')
+    state_monitor_E = state_monitor_I = None
+    if record_volrages:
+        state_monitor_E = b2.StateMonitor(E_cells, "vm", record=True)
+        state_monitor_I = b2.StateMonitor(I_cells, "vm", record=True)
 
-# Initialise random parameters.
-I_cells.VT = (randn(len(I_cells)) *
-              I_cell_params['VTsd'] + I_cell_params['VTmean'])
-I_cells.IX = (randn(len(I_cells)) *
-              I_cell_params['IXsd'] + I_cell_params['IXmean'])
+    net = b2.Network(E_cells)
+    net.add(I_cells)
+    if record_volrages:
+        net.add(state_monitor_E)
+        net.add(state_monitor_I)
+    net.add(spike_monitor_E)
+    net.add(spike_monitor_I)
+    net.add(rate_monitor_E)
+    net.add(rate_monitor_I)
+    net.add(cEE)
+    net.add(cIE)
+    net.add(cEX)
+    net.add(cIX)
+    # Randomise initial membrane potentials.
+    I_cells.vm = randn(len(I_cells)) * 10 * b2.mV - 60 * b2.mV
+    E_cells.vm = randn(len(E_cells)) * 10 * b2.mV - 60 * b2.mV
 
-E_cells.VT = (randn(len(E_cells)) *
-              E_cell_params['VTsd'] + E_cell_params['VTmean'])
-E_cells.IX = (randn(len(E_cells)) *
-              E_cell_params['IXsd'] + E_cell_params['IXmean'])
+    print('Simulation running...')
 
-spike_monitor_E = b2.SpikeMonitor(E_cells)
-spike_monitor_I = b2.SpikeMonitor(I_cells)
+    start_time = time.time()
+    b2.run(sim_duration*b2.ms)
 
-rate_monitor_E = b2.PopulationRateMonitor(E_cells)
-rate_monitor_I = b2.PopulationRateMonitor(I_cells)
-
-if record_volrages:
-    state_monitor_E = b2.StateMonitor(E_cells, "vm", record=True)
-    state_monitor_I = b2.StateMonitor(I_cells, "vm", record=True)
-
-net = b2.Network(E_cells)
-net.add(I_cells)
-if record_volrages:
-    net.add(state_monitor_E)
-    net.add(state_monitor_I)
-net.add(spike_monitor_E)
-net.add(spike_monitor_I)
-net.add(rate_monitor_E)
-net.add(rate_monitor_I)
-net.add(cEE)
-net.add(cIE)
-net.add(cEX)
-net.add(cIX)
-# Randomise initial membrane potentials.
-I_cells.vm = randn(len(I_cells)) * 10 * b2.mV - 60 * b2.mV
-E_cells.vm = randn(len(E_cells)) * 10 * b2.mV - 60 * b2.mV
-
-print('Simulation running...')
-
-start_time = time.time()
-b2.run(sim_duration*b2.ms)
-
-duration = time.time() - start_time
-print('Simulation time:', duration, 'seconds')
+    duration = time.time() - start_time
+    print('Simulation time:', duration, 'seconds')
 
 
-def plot(plot_voltages=False):
+def plot(spike_monitor_E,
+         spike_monitor_I,
+         state_monitor_E,
+         state_monitor_I,
+         rate_monitor_E,
+         rate_monitor_I,
+         plot_voltages=False):
 
     fig, ax = plt.subplots(3, figsize=(10, 8), sharex=True)
 
@@ -256,4 +253,18 @@ def plot(plot_voltages=False):
     plt.savefig("data/init.png", dpi=150)
 
 
-plot(plot_voltages)
+if __name__ == "__main__":
+
+    num_I_cells = 2000
+    num_E_cells = 8000
+
+    sim_duration = 1000
+    stimulus = np.sin(np.arange(0, sim_duration)*2*np.pi/sim_duration)
+    state = "beta"
+
+    integration_method = "rk2"
+    record_volrages = False
+    plot_voltages = record_volrages
+
+    simulate()
+    plot(plot_voltages)
