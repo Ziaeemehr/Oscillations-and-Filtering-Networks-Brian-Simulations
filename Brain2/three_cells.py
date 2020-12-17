@@ -1,9 +1,3 @@
-'''
-Class for simulating input networks from Akam et al Neuron 2010.  Network can be set to either asychronous, gamma oscillating, or beta oscillating state when it is initialised. The input networks were simulated in Nest simulator for the original paper and when I built them in Brian they showed substanitally lower firing rates for reasons that I do not fully understand but which may be due to the connection function working somewhat differently. I have adjusted a couple of synaptic weights (where indicated) to bring the firing rates back  to aproximately where they were in the Nest implementation. The resulting networks behave very similarly to those in the paper but have slightly lower oscillation frequencies.
-
-# Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
-'''
-
 import os
 import time
 import pylab as plt
@@ -12,10 +6,17 @@ from numpy.random import randn
 import brian2 as b2
 from brian2.equations.equations import Equations
 import logging
-logger = logging.getLogger('ftpuploader')
+# logger = logging.getLogger('ftpuploader')
 
-b2.seed(1)
-np.random.seed(1)
+
+'''
+connect three exponential LIF cells in feed forward loop
+with alpha shape conductance base synapse
+edges : ([0,1], [0,2], [1,2])
+'''
+
+b2.seed(2)
+np.random.seed(2)
 
 
 def simulate():
@@ -35,7 +36,7 @@ def simulate():
         "Erev_e": 0.0*b2.mV,
         "Tau_e": 4.0*b2.ms,
         "w_e": 1.1,  # ! *b2.nsiemens 0.1
-        "p_e": 0.05,
+        "p_e": 1.0,
     }
 
     E_cell_params = {'Ncells': num_E_cells,
@@ -43,19 +44,16 @@ def simulate():
                      'IXsd': 20*b2.pA}
 
     eqs_e = """
+        VT : volt
+        IX : amp
+        I_syn_e = g_syn_e * (Erev_e - vm): amp
         Im = IX + 
             gL * (EL - vm) + 
             gL * DeltaT * exp((vm - VT) / DeltaT) : amp
         
+        ds_e/dt = -s_e / Tau_e : siemens                
+        dg_syn_e/dt = (s_e - g_syn_e) / Tau_e : siemens 
         dvm/dt = (Im + I_syn_e) / C : volt
-        VT : volt
-        IX : amp
-        I_syn_e : amp
-        """
-    eqs_syn_e = """
-        dg_syn_e/dt = (s_e - g_syn_e) / Tau_e : siemens (event-driven)
-        ds_e/dt = -s_e / Tau_e : siemens                (event-driven)
-        I_syn_e_post =  g_syn_e * (Erev_e - vm): amp (summed)
         """
 
     E_cells = b2.NeuronGroup(E_cell_params['Ncells'],
@@ -69,22 +67,27 @@ def simulate():
                                         **param_E_syn,
                                         })
 
-    cEE = b2.Synapses(E_cells, E_cells, eqs_syn_e,
-                      on_pre='g_syn_e += {}*nsiemens'.format(
+    cEE = b2.Synapses(E_cells, E_cells,
+                      on_pre='s_e += {}*nsiemens'.format(
                           param_E_syn["w_e"]),
+                      dt=dt0,
                       method=integration_method,
                       namespace={**common_params,
                                  **param_E_syn,
                                  })
-    cEE.connect(i=0, j=1)
+    adj = np.array([[0, 0, 0],
+                    [1, 0, 0],
+                    [1, 1, 0]])
+    cols, rows = np.nonzero(adj)
+    # print(rows, cols)
+    cEE.connect(i=rows, j=cols)    
+    # for i, j in zip(cEE.i, cEE.j):
+    #     print(i, j)
 
     # Initialise random parameters.
-    E_cells.VT = [common_params['VTmean']] * 2
-    # (randn(len(E_cells)) *
-    #               common_params['VTsd'] + common_params['VTmean'])
-    E_cells.IX = [E_cell_params['IXmean']] * 2
-    # (randn(len(E_cells)) *
-    #               E_cell_params['IXsd'] + E_cell_params['IXmean'])
+    E_cells.VT = [common_params['VTmean']] * E_cell_params["Ncells"]
+    E_cells.IX = (randn(len(E_cells)) *
+                  E_cell_params['IXsd'] + E_cell_params['IXmean'])
 
     E_cells.vm = randn(len(E_cells)) * 10 * b2.mV - 60 * b2.mV
 
@@ -92,7 +95,9 @@ def simulate():
 
     state_monitor_E = None
     if record_volrages:
-        state_monitor_E = b2.StateMonitor(E_cells, "vm", record=True)
+        state_monitor_E = b2.StateMonitor(E_cells,
+                                          ["vm", "g_syn_e", "I_syn_e"],
+                                          record=True)
 
     net = b2.Network(E_cells)
     if record_volrages:
@@ -114,7 +119,7 @@ def plot(spike_monitor_E,
          state_monitor_E,
          plot_voltages=False):
 
-    fig, ax = plt.subplots(2, figsize=(10, 5), sharex=True)
+    fig, ax = plt.subplots(4, figsize=(10, 5), sharex=True)
 
     ax[0].plot(spike_monitor_E.t/b2.ms, spike_monitor_E.i, '.k', ms=3)
 
@@ -122,9 +127,20 @@ def plot(spike_monitor_E,
         for i in range(num_E_cells):
             ax[1].plot(state_monitor_E.t/b2.ms,
                        state_monitor_E.vm[i]/b2.mV, label=str(i+1))
+    # ax[2].plot(state_monitor_E.t/b2.ms,
+    #            state_monitor_E.I_syn_e[1]/b2.amp,
+    #            lw=1, color="r")
+    ax[2].plot(state_monitor_E.t/b2.ms,
+               state_monitor_E.g_syn_e[2]/b2.nsiemens,
+               lw=1, color="b", ls="--")
+    ax[3].plot(state_monitor_E.t/b2.ms,
+               state_monitor_E.I_syn_e[2]/b2.pA,
+               lw=1, color="b", ls="--")
+    ax[2].set_ylabel(r"$g_{syn}$(nS)")
+    ax[3].set_ylabel(r"$I_{syn}$(pA)")
 
     ax[0].set_ylabel("E cells")
-    ax[-1].legend(loc="upper right")
+    ax[1].legend(loc="upper right")
     ax[1].set_ylabel("Voltages E")
     ax[-1].set_xlabel("time (ms)")
     plt.savefig("data/E_cell.png", dpi=150)
@@ -133,11 +149,10 @@ def plot(spike_monitor_E,
 
 if __name__ == "__main__":
 
-    num_E_cells = 2
+    num_E_cells = 3
     dt0 = 0.1*b2.ms
 
     sim_duration = 200
-    stimulus = np.sin(np.arange(0, sim_duration)*2*np.pi/sim_duration)
     state = "beta"
 
     integration_method = "rk2"
