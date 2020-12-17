@@ -11,7 +11,9 @@ import numpy as np
 import brian2 as b2
 import pylab as plt
 from numpy.random import randn
+from numpy import pi, sin, arange, floor
 from brian2.equations.equations import Equations
+from utility import *
 
 logger = logging.getLogger('ftpuploader')
 
@@ -19,26 +21,10 @@ b2.seed(1)
 np.random.seed(1)
 
 
-def input_rates():
-    '''
-    Returns firing rates for spatially patterned stimulus to E cells.  
-    stimuluss is array of stimulus orientations as function of time in ms.
-    Range of stimuluss is 0 - 1.
-    '''
-    t = np.linspace(0, 1, num_E_cells)
-    indices = (np.floor(t*1000) % stimulus.size).astype(int)
-    r = 400*(1 + 0.35 * np.cos(2*np.pi*stimulus[indices]))*b2.Hz
+def simulate(to_file=True):
 
-    return r
-    # print(np.cos(2*np.pi))
-    # print(np.floor(t*1000) % stimulus.size)
-    # print(r)
-
-
-def simulate():
-
-    common_params = {    # Parameters common to all neurons.
-        'C': 100*b2.pfarad,
+    par_com = {    # Parameters common to all neurons.
+        'C': 100*b2.pF,
         'tau_m': 10*b2.ms,
         'EL': -60*b2.mV,
         'DeltaT': 2*b2.mV,
@@ -47,19 +33,20 @@ def simulate():
         'VTsd': 2*b2.mV
     }
 
-    common_params['gL'] = common_params['C'] / common_params['tau_m']
+    par_com['gL'] = par_com['C'] / par_com['tau_m']
 
-    E_cell_params = dict(common_params, **{'Ncells': num_E_cells,
-                                           'IXmean': 30*b2.pA,
-                                           'IXsd': 20*b2.pA})
+    par_E = dict(par_com, **{'Ncells': num_E_cells,
+                             'IXmean': 30.*b2.pA,  # 30
+                             'IXsd': 20.*b2.pA})
 
-    I_cell_params = dict(common_params, **{'Ncells': num_I_cells,
-                                           'IXmean': 30*b2.pA,
-                                           'IXsd': 80*b2.pA})
+    par_I = dict(par_com, **{'Ncells': num_I_cells,
+                             'IXmean': 30.*b2.pA,
+                             'IXsd': 80.*b2.pA,
+                             'p_rate': 400.0*b2.Hz})
 
-    param_I_syn = {"Erev_i": 0.0*b2.mV,
+    param_I_syn = {"Erev_i": -80.0*b2.mV,
                    "Erev_x": 0.0*b2.mV,
-                   "Erev_e": -80.0*b2.mV,
+                   "Erev_e": 0.0*b2.mV,
                    "Tau_i": 3.0*b2.ms,
                    "Tau_e": 4.0*b2.ms,
                    "Tau_x": 4.0*b2.ms,
@@ -69,47 +56,18 @@ def simulate():
                    "p_i": 0.05,
                    "p_e": 0.05,
                    }
-    param_E_syn = {"Erev_i": 0.0*b2.mV,
+    param_E_syn = {"Erev_i": -80.0*b2.mV,
                    "Erev_x": 0.0*b2.mV,
-                   "Erev_e": -80.0*b2.mV,
-                   "Tau_i": 3.0*b2.ms,
+                   "Erev_e": 0.0*b2.mV,
+                   "Tau_i": 3.5*b2.ms,
                    "Tau_e": 4.0*b2.ms,
                    "Tau_x": 4.0*b2.ms,
                    "w_i": 0.6*b2.nsiemens,  # *b2.nsiemens,  # Peak conductance
                    "w_x": 1.4*b2.nsiemens,
                    "w_e": 0.1*b2.nsiemens,
-                   "p_i": 0.1*b2.nsiemens,
-                   "p_e": 0.05*b2.nsiemens,
+                   "p_i": 0.1,
+                   "p_e": 0.05,
                    }
-
-    eqs_e = Equations(
-        """
-        Im = IX + 
-            gL * (EL - vm) + 
-            gL * DeltaT * exp((vm - VT) / DeltaT) - 
-        dvm/dt = Im / C : volt
-        VT : volt
-        IX : amp
-        I_syn_e : amp 
-        I_syn_i : amp
-        I_syn_x : amp
-        """
-    )
-    # e, i and x to e cell
-    eqs_syn_e = """  
-        dg_syn_e/dt = (s_e - g_syn_e) / Tau_e : siemens (event-driven)
-        ds_e/dt = -s_e / Tau_e : siemens                (event-driven)
-        I_syn_e_post =  g_syn_e * (Erev_e - vm): amp (summed)
-
-        dg_syn_i/dt = (s_i - g_syn_i) / Tau_i : siemens (event-driven)
-        ds_i/dt = -s_i / Tau_i : siemens                (event-driven)
-        I_syn_i_post =  g_syn_i * (Erev_i - vm): amp (summed)
-
-        dg_syn_x/dt = (s_x - g_syn_x) / Tau_e : siemens (event-driven)
-        ds_x/dt = -s_x / Tau_x : siemens                (event-driven)
-        I_syn_x_post =  g_syn_x * (Erev_x - vm): amp (summed)
-        """
-
     if state == "gamma":
         print('Gamma oscillation state.')
         param_I_syn['w_x'] = 0.3*b2.nS
@@ -117,109 +75,151 @@ def simulate():
 
     elif state == "beta":
         param_I_syn['w_x'] = 0.5 * b2.nS
-        param_I_syn['Tau_x'] = 12 * b2.ms
+        param_I_syn['Tau_x'] = 12. * b2.ms
         param_E_syn['w_x'] = 0.55 * b2.nS
-        param_E_syn['Tau_x'] = 12 * b2.ms
+        param_E_syn['Tau_x'] = 12. * b2.ms
         param_E_syn['w_e'] = 0.05 * b2.nS
-        param_E_syn['Tau_e'] = 12 * b2.ms
+        param_E_syn['Tau_e'] = 12. * b2.ms
         param_I_syn['w_e'] = 0.1 * b2.nS
         param_E_syn['w_i'] = 0.1 * b2.nS
-        param_E_syn['Tau_i'] = 15 * b2.ms
+        param_E_syn['Tau_i'] = 15. * b2.ms
         param_I_syn['w_i'] = 0.2 * b2.nS
-        param_I_syn['Tau_i'] = 15 * b2.ms
+        param_I_syn['Tau_i'] = 15. * b2.ms
 
-    # I_cells = b2.NeuronGroup(I_cell_params['Ncells'],
-    #                          model=eqs_i,
-    #                          method=integration_method,
-    #                          threshold="vm > 0.*mV",
-    #                          reset="vm={}*mV".format(I_cell_params['Vreset']),
-    #                          refractory="vm > 0.*mV",
-    #                          namespace={**common_params,
-    #                                     **param_I_syn
-    #                                     }
-    #                          )
+    eqs = Equations(
+        """
+        VT : volt
+        IX : amp
+        I_syn_e = g_syn_e * (Erev_e - vm): amp
+        I_syn_i = g_syn_i * (Erev_i - vm): amp
+        I_syn_x = g_syn_x * (Erev_x - vm): amp
+        Im = IX +
+            gL * (EL - vm) +
+            gL * DeltaT * exp((vm - VT) / DeltaT) : amp
 
-    E_cells = b2.NeuronGroup(E_cell_params['Ncells'],
-                             model=eqs_e,
+        ds_e/dt = -s_e / Tau_e : siemens
+        dg_syn_e/dt = (s_e - g_syn_e) / Tau_e : siemens
+
+        ds_i/dt = -s_i / Tau_i : siemens
+        dg_syn_i/dt = (s_i - g_syn_i) / Tau_i : siemens
+
+        ds_x/dt = -s_x / Tau_x : siemens
+        dg_syn_x/dt = (s_x - g_syn_x) / Tau_x : siemens
+
+        dvm/dt = (Im + I_syn_e + I_syn_i + I_syn_x) / C : volt
+        """
+    )
+
+    I_cells = b2.NeuronGroup(par_I['Ncells'],
+                             model=eqs,
+                             dt=dt0,
                              method=integration_method,
                              threshold="vm > 0.*mV",
-                             reset="vm={}*mV".format(E_cell_params['Vreset']),
                              refractory="vm > 0.*mV",
-                             namespace={**common_params,
-                                        **param_E_syn,
-                                        })
+                             reset="vm={}*mV".format(par_com['Vreset']),
+                             namespace={**par_com,
+                                        **param_I_syn})
 
-    # Poisson_to_E = b2.PoissonGroup(E_cell_params['Ncells'],
-    #                                rates=input_rates())  # ! input_rates
-    # Poisson_to_I = b2.PoissonGroup(I_cell_params['Ncells'],
-    #                                rates=400*b2.Hz)
+    E_cells = b2.NeuronGroup(par_E['Ncells'],
+                             model=eqs,
+                             dt=dt0,
+                             method=integration_method,
+                             threshold="vm > 0.*mV",
+                             refractory="vm > 0.*mV",
+                             reset="vm={}*mV".format(par_com['Vreset']),
+                             namespace={**par_com,
+                                        **param_E_syn})
 
-    cEE = b2.Synapses(E_cells,
-                      E_cells,
-                      eqs_syn_e,
-                      on_pre='''
-                      g_syn_e+=param_E_syn["w_e"]
-                      g_syn_i+=param_E_syn["w_i]
-                      g_syn_x+=param_E_syn["w_x]
-                      ''',
-                      namespace={**common_params, **param_E_syn})
-    cEE.connect(p=param_E_syn["p_e"])
+    # rates = '400.0*(1 + 0.35 * cos(2*pi*sin(2*pi*t/(100*ms)) + pi + 2*pi/N + (1.0*i/N)*2*pi))*Hz'
+    Poisson_to_E = b2.PoissonGroup(
+        par_E['Ncells'],
+        rates='400.0*(1+0.35*cos(2*pi*sin(2*pi*t/({:d}*ms))+pi+'
+        '2*pi/{:d} + (1.0*i/{:d})*2*pi))*Hz'.format(
+            sim_duration,
+            par_E['Ncells'],
+            par_E['Ncells']))
 
-    # cIE = b2.Synapses(E_cells,
-    #                   I_cells,
-    #                   on_pre='gi+={}*nsiemens'.format(param_I_syn["w_e"]))
-    # cIE.connect(p=param_I_syn["p_e"])
+    Poisson_to_I = b2.PoissonGroup(par_I['Ncells'],
+                                   rates=par_I["p_rate"])
 
-    # cEX = b2.Synapses(Poisson_to_E,
-    #                   E_cells,
-    #                   method=integration_method,
-    #                   on_pre="gx += {}*nsiemens".format(param_E_syn["w_x"]))
-    # cEX.connect(j='i')
+    # ---------------------------------------------------------------
+    cEE = b2.Synapses(E_cells, E_cells,
+                      dt=dt0,
+                      on_pre='s_e+= {}*nS'.format(param_E_syn['w_e']),
+                      namespace={**par_com, **param_E_syn})
+    cEE.connect(p="{:g}".format(param_E_syn["p_e"]), condition='i!=j')
 
-    # cIX = b2.Synapses(Poisson_to_I,
-    #                   I_cells,
-    #                   on_pre="gx += {}*nsiemens".format(param_I_syn["w_x"]))
-    # cIX.connect(j='i')
+    cII = b2.Synapses(I_cells, I_cells,
+                      dt=dt0,
+                      method=integration_method,
+                      on_pre='s_i+= {}*nS'.format(param_I_syn['w_i']),
+                      namespace={**par_com, **param_I_syn})
+    cII.connect(p="{:g}".format(param_I_syn["p_e"]), condition='i!=j')
 
-    # Initialise random parameters.
-    # I_cells.VT = (randn(len(I_cells)) *
-    #               I_cell_params['VTsd'] + I_cell_params['VTmean'])
-    # I_cells.IX = (randn(len(I_cells)) *
-    #               I_cell_params['IXsd'] + I_cell_params['IXmean'])
+    cIE = b2.Synapses(E_cells, I_cells,
+                      dt=dt0,
+                      method=integration_method,
+                      on_pre='s_e+={}*nsiemens'.format(param_I_syn["w_e"]))
+    cIE.connect(p=param_I_syn["p_e"])
 
-    E_cells.VT = (randn(len(E_cells)) *
-                  E_cell_params['VTsd'] + E_cell_params['VTmean'])
-    E_cells.IX = (randn(len(E_cells)) *
-                  E_cell_params['IXsd'] + E_cell_params['IXmean'])
+    cEI = b2.Synapses(I_cells, E_cells,
+                      dt=dt0,
+                      method=integration_method,
+                      on_pre='s_i+={}*nsiemens'.format(param_I_syn["w_i"]))
+    cEI.connect(p=param_I_syn["p_i"])
 
-    spike_monitor_E = b2.SpikeMonitor(E_cells)
-    # spike_monitor_I = b2.SpikeMonitor(I_cells)
+    cEX = b2.Synapses(Poisson_to_E, E_cells,
+                      method=integration_method,
+                      on_pre="s_x += {}*nS".format(param_E_syn["w_x"]))
+    cEX.connect(j='i')
 
-    rate_monitor_E = b2.PopulationRateMonitor(E_cells)
-    # rate_monitor_I = b2.PopulationRateMonitor(I_cells)
+    cIX = b2.Synapses(Poisson_to_I, I_cells,
+                      dt=dt0,
+                      method=integration_method,
+                      on_pre="s_x += {}*nS".format(param_I_syn["w_x"]))
+    cIX.connect(j='i')
 
-    state_monitor_E = state_monitor_I = None
-    if record_volrages:
-        state_monitor_E = b2.StateMonitor(E_cells, "vm", record=True)
-        # state_monitor_I = b2.StateMonitor(I_cells, "vm", record=True)
+    # Initialise random parameters.----------------------------------
+    E_cells.VT = (randn(len(E_cells)) * par_com['VTsd'] + par_com['VTmean'])
+    I_cells.VT = (randn(len(I_cells)) * par_com['VTsd'] + par_com['VTmean'])
 
-    net = b2.Network(E_cells)
-    # net.add(I_cells)
-    if record_volrages:
-        net.add(state_monitor_E)
-        net.add(state_monitor_I)
-    net.add(spike_monitor_E)
-    # net.add(spike_monitor_I)
-    net.add(rate_monitor_E)
-    # net.add(rate_monitor_I)
-    net.add(cEE)
-    # net.add(cIE)
-    # net.add(cEX)
-    # net.add(cIX)
-    # Randomise initial membrane potentials.
-    # I_cells.vm = randn(len(I_cells)) * 10 * b2.mV - 60 * b2.mV
+    E_cells.IX = (randn(len(E_cells)) * par_E['IXsd'] + par_E['IXmean'])
+    I_cells.IX = (randn(len(I_cells)) * par_I['IXsd'] + par_I['IXmean'])
+
+    I_cells.vm = randn(len(I_cells)) * 10 * b2.mV - 60 * b2.mV
     E_cells.vm = randn(len(E_cells)) * 10 * b2.mV - 60 * b2.mV
 
+    spike_monitor_E = b2.SpikeMonitor(E_cells)
+    spike_monitor_I = b2.SpikeMonitor(I_cells)
+
+    rate_monitor_E = b2.PopulationRateMonitor(E_cells)
+    rate_monitor_I = b2.PopulationRateMonitor(I_cells)
+
+    state_monitor_E = state_monitor_I = None
+    if rocord_voltages:
+        state_monitor_E = b2.StateMonitor(E_cells, "vm",
+                                          record=True, dt=dt0)
+        state_monitor_I = b2.StateMonitor(I_cells, "vm",
+                                          record=True, dt=dt0)
+
+    net = b2.Network(E_cells)
+    net.add(I_cells)
+    net.add(spike_monitor_E)
+    net.add(spike_monitor_I)
+    net.add(rate_monitor_E)
+    net.add(rate_monitor_I)
+    net.add(cEE)
+    net.add(cII)
+    net.add(cEI)
+    net.add(cIE)
+    net.add(cIX)
+    net.add(cEX)
+
+    if rocord_voltages:
+        net.add(state_monitor_E)
+        net.add(state_monitor_I)
+
+    # ----------------------------------------------------------------
     print('Simulation running...')
 
     start_time = time.time()
@@ -227,61 +227,51 @@ def simulate():
 
     duration = time.time() - start_time
     print('Simulation time:', duration, 'seconds')
+    # ----------------------------------------------------------------
+
+    if to_file:
+        to_npz(spike_monitor_E, rate_monitor_E, "data/E")
+        to_npz(spike_monitor_I, rate_monitor_I, "data/I")
+    # ----------------------------------------------------------------
+    # return (spike_monitor_E,
+    #         rate_monitor_E,
+    #         spike_monitor_I,
+    #         rate_monitor_I)
+
+# ------------------------------------------------------------------------------
 
 
-def plot(spike_monitor_E,
-         spike_monitor_I,
-         state_monitor_E,
-         state_monitor_I,
-         rate_monitor_E,
-         rate_monitor_I,
-         plot_voltages=False):
+def to_npz(spike_monitor, rate_monitor, filename, width=1*b2.ms):
 
-    fig, ax = plt.subplots(3, figsize=(10, 8), sharex=True)
+    spikes_id = spike_monitor.i
+    spike_times = spike_monitor.t/b2.ms
 
-    ax[0].plot(spike_monitor_E.t/b2.ms, spike_monitor_E.i, '.k', ms=0.5)
-    ax[1].plot(spike_monitor_I.t/b2.ms, spike_monitor_I.i, '.k', ms=0.5)
-    if plot_voltages:
-        for i in range(num_E_cells):
-            ax[3].plot(state_monitor_E.t/b2.ms,
-                       state_monitor_E.vm[i]/b2.mV)
-        for i in range(num_I_cells):
-            ax[3].plot(state_monitor_I.t/b2.ms,
-                       state_monitor_I.vm[i]/b2.mV)
+    rate_times = rate_monitor.t/b2.ms
+    rate_amp = rate_monitor.smooth_rate(width=width) / b2.Hz
 
-    try:
-        ax[2].plot(rate_monitor_E.t/b2.ms,
-                   rate_monitor_E.smooth_rate(width=5*b2.ms)/b2.Hz,
-                   color='b',
-                   label="e")
-        ax[2].plot(rate_monitor_I.t/b2.ms,
-                   rate_monitor_I.smooth_rate(width=5*b2.ms)/b2.Hz,
-                   color='g',
-                   label="i")
-    except Exception as e:
-        logger.error(str(e))
+    np.savez(filename,
+             spikes_time=spike_times,
+             spikes_id=spikes_id,
+             rate_amp=rate_amp,
+             rate_times=rate_times,
+             )
+# ------------------------------------------------------------------------------
 
-    ax[2].set_ylabel('Population average rates')
-    ax[-1].set_xlabel("time (ms)")
-    ax[0].set_ylabel("E cells")
-    ax[1].set_ylabel("I cells")
-    # ax[3].set_ylabel("Voltages E")
-    ax[-1].legend(loc="upper right")
-    plt.savefig("data/init.png", dpi=150)
 
+num_E_cells = 8000
+num_I_cells = 2000
+dt0 = 0.1*b2.ms
+sim_duration = 1000  # ms
+
+# ------------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
-    num_I_cells = 20
-    num_E_cells = 80
+    state = "beta"
 
-    sim_duration = 200
-    stimulus = np.sin(np.arange(0, sim_duration)*2*np.pi/sim_duration)
-    state = "gamma"
+    integration_method = "rk2"
+    plot_voltages = rocord_voltages = False
 
-    integration_method = "rk4"
-    record_volrages = False
-    plot_voltages = record_volrages
-
-    simulate()
-    # plot(plot_voltages)
+    simulate(to_file=True)
+    plot_raster_from_data("data/E", xlim=[0, sim_duration])
+    plot_raster_from_data("data/I", xlim=[0, sim_duration])
