@@ -1,4 +1,4 @@
-from input_network1 import dt0
+from input_network import dt0
 import numpy as np
 import brian2 as b2
 import pylab as plt
@@ -82,7 +82,7 @@ def plot_raster_from_device(spike_monitor_E,
     plt.close()
 #--------------------------------------------------------------------
 
-def plot_raster_from_data(filename, xlim=None):
+def plot_raster_from_data(filename, xlim=None, title=None):
 
     fig, ax = plt.subplots(3, figsize=(10, 8))
 
@@ -111,6 +111,10 @@ def plot_raster_from_data(filename, xlim=None):
         ax[1].set_xlim(xlim)
     
     ax[2].set_xlim(0.01, 100)
+    ax[2].set_xlabel("frequency [Hz]")
+    ax[2].set_ylabel("amplitude")
+    if title is not None:
+        ax[0].set_title(title)
 
     plt.tight_layout()
 

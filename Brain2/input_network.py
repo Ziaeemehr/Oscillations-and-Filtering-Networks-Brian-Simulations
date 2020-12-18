@@ -281,6 +281,6 @@ if __name__ == "__main__":
     integration_method = "rk2"
     plot_voltages = rocord_voltages = False
 
-    simulate(to_file=True)
-    plot_raster_from_data("data/E", xlim=[100, sim_duration])
-    plot_raster_from_data("data/I", xlim=[100, sim_duration])
+    # simulate(to_file=True)
+    plot_raster_from_data("data/E", xlim=[100, sim_duration], title="E cells")
+    plot_raster_from_data("data/I", xlim=[100, sim_duration], title="I cells")
