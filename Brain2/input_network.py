@@ -4,12 +4,10 @@ Class for simulating input networks from Akam et al Neuron 2010.  Network can be
 # Copyright (c) Thomas Akam 2012.  Licenced under the GNU General Public License v3.
 '''
 
-import os
 import time
 import logging
 import numpy as np
 import brian2 as b2
-import pylab as plt
 from numpy.random import randn
 from numpy import pi, sin, arange, floor
 from brian2.equations.equations import Equations
@@ -17,32 +15,33 @@ from utility import *
 
 logger = logging.getLogger('ftpuploader')
 
-b2.seed(1)
-np.random.seed(1)
+b2.seed(2)
+np.random.seed(2)
 
 
 def simulate(to_file=True):
 
-    par_com = {    # Parameters common to all neurons.
+    common_params = {    # Parameters common to all neurons.
         'C': 100*b2.pF,
         'tau_m': 10*b2.ms,
         'EL': -60*b2.mV,
         'DeltaT': 2*b2.mV,
         'Vreset': -65,  # *b2.mV
         'VTmean': -50*b2.mV,
-        'VTsd': 2*b2.mV
+        'VTsd': 2*b2.mV,
+        'delay': 0.*b2.ms,
     }
 
-    par_com['gL'] = par_com['C'] / par_com['tau_m']
+    common_params['gL'] = common_params['C'] / common_params['tau_m']
 
-    par_E = dict(par_com, **{'Ncells': num_E_cells,
-                             'IXmean': 30.*b2.pA,  # 30
-                             'IXsd': 20.*b2.pA})
+    E_cell_params = dict(common_params, **{'Ncells': num_E_cells,
+                                           'IXmean': 30.*b2.pA,  # 30
+                                           'IXsd': 20.*b2.pA})
 
-    par_I = dict(par_com, **{'Ncells': num_I_cells,
-                             'IXmean': 30.*b2.pA,
-                             'IXsd': 80.*b2.pA,
-                             'p_rate': 400.0*b2.Hz})
+    I_cell_params = dict(common_params, **{'Ncells': num_I_cells,
+                                           'IXmean': 30.*b2.pA,
+                                           'IXsd': 80.*b2.pA,
+                                           'p_rate': 400.0*b2.Hz})
 
     param_I_syn = {"Erev_i": -80.0*b2.mV,
                    "Erev_x": 0.0*b2.mV,
@@ -110,51 +109,53 @@ def simulate(to_file=True):
         """
     )
 
-    I_cells = b2.NeuronGroup(par_I['Ncells'],
+    I_cells = b2.NeuronGroup(I_cell_params['Ncells'],
                              model=eqs,
                              dt=dt0,
                              method=integration_method,
                              threshold="vm > 0.*mV",
                              refractory="vm > 0.*mV",
-                             reset="vm={}*mV".format(par_com['Vreset']),
-                             namespace={**par_com,
+                             reset="vm={}*mV".format(common_params['Vreset']),
+                             namespace={**common_params,
                                         **param_I_syn})
 
-    E_cells = b2.NeuronGroup(par_E['Ncells'],
+    E_cells = b2.NeuronGroup(E_cell_params['Ncells'],
                              model=eqs,
                              dt=dt0,
                              method=integration_method,
                              threshold="vm > 0.*mV",
                              refractory="vm > 0.*mV",
-                             reset="vm={}*mV".format(par_com['Vreset']),
-                             namespace={**par_com,
+                             reset="vm={}*mV".format(common_params['Vreset']),
+                             namespace={**common_params,
                                         **param_E_syn})
 
     # rates = '400.0*(1 + 0.35 * cos(2*pi*sin(2*pi*t/(100*ms)) + pi + 2*pi/N + (1.0*i/N)*2*pi))*Hz'
     Poisson_to_E = b2.PoissonGroup(
-        par_E['Ncells'],
+        E_cell_params['Ncells'],
         rates='400.0*(1+0.35*cos(2*pi*sin(2*pi*t/({:d}*ms))+pi+'
         '2*pi/{:d} + (1.0*i/{:d})*2*pi))*Hz'.format(
             sim_duration,
-            par_E['Ncells'],
-            par_E['Ncells']))
+            E_cell_params['Ncells'],
+            E_cell_params['Ncells']))
 
-    Poisson_to_I = b2.PoissonGroup(par_I['Ncells'],
-                                   rates=par_I["p_rate"])
+    Poisson_to_I = b2.PoissonGroup(I_cell_params['Ncells'],
+                                   rates=I_cell_params["p_rate"])
 
     # ---------------------------------------------------------------
     cEE = b2.Synapses(E_cells, E_cells,
                       dt=dt0,
+                      delay=common_params['delay'],
                       on_pre='s_e+= {}*nS'.format(param_E_syn['w_e']),
-                      namespace={**par_com, **param_E_syn})
-    cEE.connect(p="{:g}".format(param_E_syn["p_e"]), condition='i!=j')
+                      namespace={**common_params, **param_E_syn})
+    cEE.connect(p="{:g}".format(param_E_syn["p_e"])) #, condition='i!=j'
 
     cII = b2.Synapses(I_cells, I_cells,
                       dt=dt0,
+                      delay=common_params['delay'],
                       method=integration_method,
                       on_pre='s_i+= {}*nS'.format(param_I_syn['w_i']),
-                      namespace={**par_com, **param_I_syn})
-    cII.connect(p="{:g}".format(param_I_syn["p_e"]), condition='i!=j')
+                      namespace={**common_params, **param_I_syn})
+    cII.connect(p="{:g}".format(param_I_syn["p_e"])) #, condition='i!=j'
 
     cIE = b2.Synapses(E_cells, I_cells,
                       dt=dt0,
@@ -164,36 +165,44 @@ def simulate(to_file=True):
 
     cEI = b2.Synapses(I_cells, E_cells,
                       dt=dt0,
+                      delay=common_params['delay'],
                       method=integration_method,
                       on_pre='s_i+={}*nsiemens'.format(param_I_syn["w_i"]))
     cEI.connect(p=param_I_syn["p_i"])
 
     cEX = b2.Synapses(Poisson_to_E, E_cells,
+                      dt=dt0,
+                      delay=common_params['delay'],
                       method=integration_method,
                       on_pre="s_x += {}*nS".format(param_E_syn["w_x"]))
     cEX.connect(j='i')
 
     cIX = b2.Synapses(Poisson_to_I, I_cells,
                       dt=dt0,
+                      delay=common_params['delay'],
                       method=integration_method,
                       on_pre="s_x += {}*nS".format(param_I_syn["w_x"]))
     cIX.connect(j='i')
 
     # Initialise random parameters.----------------------------------
-    E_cells.VT = (randn(len(E_cells)) * par_com['VTsd'] + par_com['VTmean'])
-    I_cells.VT = (randn(len(I_cells)) * par_com['VTsd'] + par_com['VTmean'])
+    E_cells.VT = (randn(len(E_cells)) *
+                  common_params['VTsd'] + common_params['VTmean'])
+    I_cells.VT = (randn(len(I_cells)) *
+                  common_params['VTsd'] + common_params['VTmean'])
 
-    E_cells.IX = (randn(len(E_cells)) * par_E['IXsd'] + par_E['IXmean'])
-    I_cells.IX = (randn(len(I_cells)) * par_I['IXsd'] + par_I['IXmean'])
+    E_cells.IX = (randn(len(E_cells)) *
+                  E_cell_params['IXsd'] + E_cell_params['IXmean'])
+    I_cells.IX = (randn(len(I_cells)) *
+                  I_cell_params['IXsd'] + I_cell_params['IXmean'])
 
     I_cells.vm = randn(len(I_cells)) * 10 * b2.mV - 60 * b2.mV
     E_cells.vm = randn(len(E_cells)) * 10 * b2.mV - 60 * b2.mV
 
-    spike_monitor_E = b2.SpikeMonitor(E_cells)
-    spike_monitor_I = b2.SpikeMonitor(I_cells)
+    spike_mon_E = b2.SpikeMonitor(E_cells)
+    spike_mon_I = b2.SpikeMonitor(I_cells)
 
-    rate_monitor_E = b2.PopulationRateMonitor(E_cells)
-    rate_monitor_I = b2.PopulationRateMonitor(I_cells)
+    LFP_E = b2.PopulationRateMonitor(E_cells)
+    LFP_I = b2.PopulationRateMonitor(I_cells)
 
     state_monitor_E = state_monitor_I = None
     if rocord_voltages:
@@ -204,10 +213,10 @@ def simulate(to_file=True):
 
     net = b2.Network(E_cells)
     net.add(I_cells)
-    net.add(spike_monitor_E)
-    net.add(spike_monitor_I)
-    net.add(rate_monitor_E)
-    net.add(rate_monitor_I)
+    net.add(spike_mon_E)
+    net.add(spike_mon_I)
+    net.add(LFP_E)
+    net.add(LFP_I)
     net.add(cEE)
     net.add(cII)
     net.add(cEI)
@@ -230,8 +239,8 @@ def simulate(to_file=True):
     # ----------------------------------------------------------------
 
     if to_file:
-        to_npz(spike_monitor_E, rate_monitor_E, "data/E")
-        to_npz(spike_monitor_I, rate_monitor_I, "data/I")
+        to_npz(spike_mon_E, LFP_E, "data/E")
+        to_npz(spike_mon_I, LFP_I, "data/I")
     # ----------------------------------------------------------------
     # return (spike_monitor_E,
     #         rate_monitor_E,
@@ -273,5 +282,5 @@ if __name__ == "__main__":
     plot_voltages = rocord_voltages = False
 
     simulate(to_file=True)
-    plot_raster_from_data("data/E", xlim=[0, sim_duration])
-    plot_raster_from_data("data/I", xlim=[0, sim_duration])
+    plot_raster_from_data("data/E", xlim=[100, sim_duration])
+    plot_raster_from_data("data/I", xlim=[100, sim_duration])
