@@ -35,26 +35,27 @@ def simulate():
     param_I_syn = {
         "Erev_x": 0.0*b2.mV,
         "Tau_x": 4.0*b2.ms,
-        "w_x": 1.1,  # ! *b2.nsiemens 0.1
+        "w_x": 1.1, #*b2.nsiemens,  # 0.1,
         "p_x": 1.0,
         "p_rate": 400.*b2.Hz,
     }
 
     I_cell_params = {'Ncells': num_I_cells,
-                     'IXmean': 100.*b2.pA,
-                     'IXsd': 20*b2.pA}
+                     'IXmean': 0.*b2.pA,
+                     'IXsd': 0*b2.pA}
 
     eqs = """
         VT : volt
         IX : amp
-        I_syn_x = g_syn_x * (Erev_x - vm): amp
+        
         Im = IX + 
             gL * (EL - vm) + 
             gL * DeltaT * exp((vm - VT) / DeltaT) : amp
         
+        dvm/dt = (Im + I_syn_x) / C : volt
         ds_x/dt = -s_x / Tau_x : siemens                
         dg_syn_x/dt = (s_x - g_syn_x) / Tau_x : siemens 
-        dvm/dt = (Im + I_syn_x) / C : volt
+        I_syn_x = g_syn_x * (Erev_x - vm): amp
         """
 
     I_cells = b2.NeuronGroup(I_cell_params['Ncells'],
@@ -71,10 +72,12 @@ def simulate():
                                    rates=param_I_syn["p_rate"])
     cIX = b2.Synapses(Poisson_to_I,
                       I_cells,
+                      #   'w: siemens (shared)'
                       dt=dt0,
                       method=integration_method,
-                      on_pre="s_x += {}*nS".format(param_I_syn["w_x"]))
-    cIX.connect(j='i')
+                      on_pre="s_x += {}*nS".format(param_I_syn["w_x"]),
+                      )
+    cIX.connect(i=0, j=0)
 
     # Initialise random parameters.
     I_cells.VT = [common_params['VTmean']] * I_cell_params["Ncells"]
@@ -142,8 +145,7 @@ if __name__ == "__main__":
     num_I_cells = 1
     dt0 = 0.1*b2.ms
 
-    sim_duration = 200
-    state = "gamma"
+    sim_duration = 100
 
     integration_method = "rk2"
     record_volrages = True

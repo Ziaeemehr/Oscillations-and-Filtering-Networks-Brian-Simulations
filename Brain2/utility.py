@@ -110,7 +110,7 @@ def plot_raster_from_data(filename, xlim=None):
         ax[0].set_xlim(xlim)
         ax[1].set_xlim(xlim)
     
-    ax[2].set_xlim(0.01, 300)
+    ax[2].set_xlim(0.01, 100)
 
     plt.tight_layout()
 
